@@ -7,17 +7,17 @@ import json
 import Adafruit_DHT
 
 sensor = Adafruit_DHT.DHT11
-moisture_threshold = 30.00
+moisture_threshold = 5.00
 channel= 23
-temp_pin = 25
-temp_threshold = 25
+temp_pin = 21
+temp_threshold = 23
 fan_pin = 16
 lamp_led = 4
 
 clientID = "755908897785"
 endpoint = "a5inpkw6al4tt-ats.iot.us-east-1.amazonaws.com" #Use the endpoint from the settings page in the IoT console
 port = 8883
-topic = "raspberry/templigh"
+topic = "tb/aws/iot/sensor/templigh"
 #
 
 GPIO.setmode(GPIO.BCM)
@@ -38,27 +38,32 @@ def init():
     GPIO.setup(lamp_led, GPIO.OUT)
 
 def relay_on(pin):
-     GPIO.output(pin, GPIO.LOW)
+     GPIO.output(pin, GPIO.HIGH)
      
      
 def relay_off(pin):
-     GPIO.output(pin, GPIO.HIGH)
+     GPIO.output(pin, GPIO.LOW)
     
 def soilMoisture():
     res = ADC0832.getADC(1)
     vol = 3.3/255 * res
-    print("vol", vol)
-    moisture_percentage = ((3.3-vol))*100
-    time.sleep(0.2)
-    print(f'Moisture: {moisture_percentage:.2f}%')
-    
-    return moisture_percentage
+    moisture = ((3.3-vol))*100
+    print(f'Moisture: {moisture:.2f}%')
+    if moisture < moisture_threshold:
+            relay_on(channel)
+            time.sleep(3.0)
+            relay_off(channel)
+    else:
+            print("Sensor is in water")
+            relay_off(channel)
+
+    return moisture
+
 def photoresistor():
     res = ADC0832.getADC(0)
     print(res)
     vol = 3.3/255 * res
-   # time.sleep(0.2)
-    print ('voltage: %.2fV' %(vol))
+    #time.sleep(0.2)
     #If lux >10
     if res <128:
         GPIO.output(lamp_led, GPIO.HIGH)
@@ -86,7 +91,7 @@ def temp():
     
     else:
         print("Failed to retrieve data from the sensor")
-
+    return temperature, humidity
 
    
 
@@ -94,23 +99,21 @@ def loop():
     while True:
         try:
             moisture =soilMoisture()
-            print(moisture)
-            if moisture < moisture_threshold:
-                relay_on(channel)
-                time.sleep(3.0)
-                relay_off(channel)
-            else:
-                print("Sensor is in water")
-                relay_off(channel)
-            # message = {
-                #'humidity' : moisture
-               # }
+            temperature,humidity= temp()
+            photoresistor()
+
+
+            message = {
+                'temperature':temperature,
+                'humidity' : humidity,
+                'Soil_Moisture':moisture
+                }
                
             
             # Send data to topic
-            #send_data(message)
-            temp()
-            photoresistor()
+            send_data(message)
+           
+            
            
         except RuntimeError as error:     # Errors happen fairly often, DHT's are hard to read, just keep going
             print(error.args[0])
@@ -118,16 +121,16 @@ def loop():
 
 
 if __name__ == '__main__':
-    #print("Starting program...")
+    print("Starting program...")
     init()
-   # mqttc.connect()
-   # print("Connect OK!")
+    mqttc.connect()
+    print("Connect OK!")
     try:
 
         loop()
     except KeyboardInterrupt: 
         ADC0832.destroy()
         GPIO.cleanup()
-       # mqttc.disconnect()
+        mqttc.disconnect()
         exit()
        
